@@ -1,0 +1,207 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  OPERATOR
+}
+
+enum BoothStatus {
+  ONLINE
+  OFFLINE
+  MAINTENANCE
+}
+
+enum SessionStatus {
+  STARTED
+  PAID
+  SHOOTING
+  EDITING
+  COMPLETED
+  CANCELLED
+  EXPIRED
+}
+
+enum PaymentMethod {
+  QRIS
+  CASH
+  VOUCHER
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  EXPIRED
+  CANCELLED
+}
+
+enum PhotoKind {
+  RAW
+  FINAL
+}
+
+enum PrintStatus {
+  PENDING
+  PRINTING
+  DONE
+  FAILED
+}
+
+enum VoucherType {
+  PERCENT
+  FIXED
+  FREE
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         Role     @default(OPERATOR)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Booth {
+  id          String      @id @default(cuid())
+  name        String
+  location    String?
+  deviceToken String      @unique
+  status      BoothStatus @default(OFFLINE)
+  lastSeenAt  DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  sessions  Session[]
+  printJobs PrintJob[]
+}
+
+model Package {
+  id          String   @id @default(cuid())
+  name        String
+  price       Int // dalam Rupiah
+  photoCount  Int
+  layout      String // contoh: "strip-4", "grid-2x2"
+  printCopies Int      @default(1)
+  active      Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  sessions Session[]
+}
+
+model Template {
+  id        String   @id @default(cuid())
+  name      String
+  imageKey  String // kunci objek di storage
+  layout    String
+  active    Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sessions Session[]
+}
+
+model Session {
+  id          String        @id @default(cuid())
+  boothId     String
+  packageId   String
+  templateId  String?
+  status      SessionStatus @default(STARTED)
+  shareToken  String        @unique @default(cuid())
+  totalAmount Int           @default(0)
+  createdAt   DateTime      @default(now())
+  completedAt DateTime?
+  expiresAt   DateTime?
+
+  booth     Booth      @relation(fields: [boothId], references: [id])
+  package   Package    @relation(fields: [packageId], references: [id])
+  template  Template?  @relation(fields: [templateId], references: [id])
+  photos    Photo[]
+  payments  Payment[]
+  printJobs PrintJob[]
+
+  @@index([boothId, createdAt])
+  @@index([status])
+}
+
+model Photo {
+  id         String    @id @default(cuid())
+  sessionId  String
+  kind       PhotoKind
+  position   Int       @default(0)
+  storageKey String
+  createdAt  DateTime  @default(now())
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+}
+
+model Voucher {
+  id         String      @id @default(cuid())
+  code       String      @unique
+  type       VoucherType
+  value      Int         @default(0)
+  maxUses    Int?
+  usedCount  Int         @default(0)
+  validFrom  DateTime?
+  validUntil DateTime?
+  active     Boolean     @default(true)
+  createdAt  DateTime    @default(now())
+
+  payments Payment[]
+}
+
+model Payment {
+  id          String        @id @default(cuid())
+  sessionId   String
+  method      PaymentMethod
+  status      PaymentStatus @default(PENDING)
+  amount      Int
+  providerRef String?       @unique
+  voucherId   String?
+  paidAt      DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  session Session  @relation(fields: [sessionId], references: [id])
+  voucher Voucher? @relation(fields: [voucherId], references: [id])
+
+  @@index([sessionId])
+  @@index([status, createdAt])
+}
+
+model PrintJob {
+  id        String      @id @default(cuid())
+  sessionId String
+  boothId   String
+  status    PrintStatus @default(PENDING)
+  copies    Int         @default(1)
+  error     String?
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  session Session @relation(fields: [sessionId], references: [id])
+  booth   Booth   @relation(fields: [boothId], references: [id])
+
+  @@index([boothId, status])
+}
+
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
